@@ -1,23 +1,24 @@
 'use strict';
 
 var fs = require('fs');
-var readline = require('readline');
-var excel = require('excel-export');
+var xlsx = require('node-xlsx');
+var moment = require('moment');
+var os = require('os');
 
 module.exports = {
   name: 'K11UserBehaviorDataInsert',
   run: function (done) {
     var argv = require('optimist').argv;
 
-    var from = new Date(argv.from);
-    var to = new Date(argv.to);
+    var from = new Date(2016, 6, 15);
+    var to = new Date(2016, 6, 16);
     var output = argv.out;
     var query = {
       createdAt: {$gte: from, $lt: to},
       behavior: {$in: ['campaign:deliver', 'campaign:open']}
     };
     var behaviors;
-    var results = [];
+    var eventIds;
     var insertSQL = [];
     async.series([
       function (done) {
@@ -47,7 +48,7 @@ module.exports = {
             appId: 1,
             appName: 1,
             channel: 1
-          }).sort({_id: 1}).toArray(function (err, results) {
+          }).toArray(function (err, results) {
             if (err) {
               return done(err);
             }
@@ -55,6 +56,7 @@ module.exports = {
               behavior.id = behavior._id.toString();
               behavior.createdAt = behavior.createdAt.toISOString();
               behavior.floor = (behavior.locationCustomFields || {}).floor;
+              console.log(behavior.createdAt);
               delete behavior._id;
             });
 
@@ -64,30 +66,104 @@ module.exports = {
         });
       },
       function (done) {
-        var lineReader = readline.createInterface({
-          input: fs.createReadStream('/Users/xianlong/aaa.txt')
+        var xlsFilePath = '/Users/xianlong/aaa.xlsx';
+
+        var sheets = xlsx.parse(xlsFilePath) || [];
+        var dataSheet = sheets[0];
+        if (!dataSheet) {
+          res.json(4001, 'no sheet in input file');
+        }
+
+        var data = dataSheet.data;
+        if (!data) {
+          res.json(4001, 'no data in input sheet');
+        }
+
+        var head = data.shift();
+        if (!head) {
+          res.json(4001, 'no column head');
+        }
+
+        var results = _.map(data, function (row) {
+          var eventId = row[1];
+          return eventId.toString();
         });
 
-        lineReader.on('line', function (line) {
-          results.push(line);
-        })
-          .on('close', function () {
-            done();
-          })
+        eventIds = _.reduce(results, function (result, id) {
+          result[id] = id;
+          return result;
+        }, {});
+
+        done();
       },
       function (done) {
         _.map(behaviors, function (behavior) {
-          console.log(behavior.id);
-          if (results.indexOf(behavior.id) === -1) {
-            insertSQL.push(behavior.id);
-          }
-          else {
-            console.log(behavior.id);
+          if (!eventIds[behavior.id]) {
+            insertSQL.push(behavior);
           }
         });
+        console.log(insertSQL.length);
 
+        _.map(insertSQL, function (item) {
+          var userTag = '';
+          if (item.userTags) {
+            userTag = item.userTags[0];
+          }
+
+          var createdAt = moment(item.createdAt).format('YYYYMMDDHHmmss');
+          var campaignValidFrom = moment(item.campaignValidFrom).format('YYYYMMDDHHmmss');
+          var campaignValidTo = moment(item.campaignValidTo).format('YYYYMMDDHHmmss');
+
+          function formatValue(value) {
+            return value === undefined ? '""' : JSON.stringify(value);
+          }
+
+          fs.appendFileSync(output, 'INSERT INTO beaconInfo(' +
+            'VipCode, ' +
+            'DeviceId, ' +
+            'RecordTime, ' +
+            'Behavior, ' +
+            'CampaignId,' +
+            'CampaignName, ' +
+            'MessageId, ' +
+            'ProjectId, ' +
+            'ProjectName, ' +
+            'BeaconId, ' +
+            'BeaconName, ' +
+            'Floor, ' +
+            'CampaignValidFrom, ' +
+            'CampaignValidTo, ' +
+            'UserTags, ' +
+            'AppId, ' +
+            'AppName, ' +
+            'Channel, ' +
+            'Sensor, ' +
+            'EventID' +
+            ') VALUES (' +
+            formatValue(item.userCustomerID) + ',' +
+            formatValue(item.deviceId) + ',' +
+            formatValue(createdAt) + ',' +
+            formatValue(item.behavior) + ',' +
+            formatValue(item.campaignId) + ',' +
+            formatValue(item.campaignName) + ',' +
+            formatValue(item.pushMsgId) + ',' +
+            formatValue(item.projectId) + ',' +
+            formatValue(item.projectName) + ',' +
+            formatValue(item.beaconName) + ',' +
+            formatValue(item.locationName) + ',' +
+            formatValue(item.floor) + ',' +
+            formatValue(campaignValidFrom) + ',' +
+            formatValue(campaignValidTo) + ',' +
+            formatValue(userTag) + ',' +
+            formatValue(item.appId) + ',' +
+            formatValue(item.appName) + ',' +
+            formatValue(item.channel) + ',' +
+            formatValue(item.sensor) + ',' +
+            formatValue(item.id) +
+            ')' + os.EOL);
+        });
         done();
-      }
-    ], done);
+      }], done);
   }
-};
+}
+;
