@@ -10,8 +10,8 @@ module.exports = {
   run: function (done) {
     var argv = require('optimist').argv;
 
-    var from = new Date(2016, 6, 15);
-    var to = new Date(2016, 6, 16);
+    var from = new Date(2016, 8, 1);
+    var to = new Date(2016, 9, 1);
     var output = argv.out;
     var query = {
       createdAt: {$gte: from, $lt: to},
@@ -41,13 +41,15 @@ module.exports = {
             projectName: 1,
             beaconId: 1,
             beaconName: 1,
+            locationName: 1,
             locationCustomFields: 1,
             campaignValidFrom: 1,
             strCampaignValidTo: 1,
             userTags: 1,
             appId: 1,
             appName: 1,
-            channel: 1
+            channel: 1,
+            sensor: 1
           }).toArray(function (err, results) {
             if (err) {
               return done(err);
@@ -56,7 +58,6 @@ module.exports = {
               behavior.id = behavior._id.toString();
               behavior.createdAt = behavior.createdAt.toISOString();
               behavior.floor = (behavior.locationCustomFields || {}).floor;
-              console.log(behavior.createdAt);
               delete behavior._id;
             });
 
@@ -110,12 +111,27 @@ module.exports = {
             userTag = item.userTags[0];
           }
 
-          var createdAt = moment(item.createdAt).format('YYYYMMDDHHmmss');
-          var campaignValidFrom = moment(item.campaignValidFrom).format('YYYYMMDDHHmmss');
-          var campaignValidTo = moment(item.campaignValidTo).format('YYYYMMDDHHmmss');
+          var createdAt = moment(item.createdAt).format('YYYY-MM-DD hh:mm:ss');
+          var campaignValidFrom = moment(item.campaignValidFrom).format('YYYY-MM-DD hh:mm:ss');
+          var campaignValidTo = moment(item.campaignValidTo).format('YYYY-MM-DD hh:mm:ss');
 
-          function formatValue(value) {
-            return value === undefined ? '""' : JSON.stringify(value);
+          function formatValue(value, toString, defaultValue) {
+            if (toString) {
+              if (defaultValue) {
+                return value === undefined ? JSON.stringify(defaultValue) : JSON.stringify(value.toString());
+              }
+              else {
+                return value === undefined ? '""' : JSON.stringify(value.toString());
+              }
+            }
+            else {
+              if (defaultValue) {
+                return value === undefined ? JSON.stringify(defaultValue) : JSON.stringify(value);
+              }
+              else {
+                return value === undefined ? '""' : JSON.stringify(value);
+              }
+            }
           }
 
           fs.appendFileSync(output, 'INSERT INTO beaconInfo(' +
@@ -157,8 +173,8 @@ module.exports = {
             formatValue(userTag) + ',' +
             formatValue(item.appId) + ',' +
             formatValue(item.appName) + ',' +
-            formatValue(item.channel) + ',' +
-            formatValue(item.sensor) + ',' +
+            formatValue(item.channel, true, "1") + ',' +
+            formatValue(item.sensor, true, "1") + ',' +
             formatValue(item.id) +
             ')' + os.EOL);
         });
